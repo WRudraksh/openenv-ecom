@@ -1,7 +1,8 @@
-openenv[core]>=0.2.0
+openenv
 fastapi>=0.115.0
 uvicorn>=0.24.0
 pydantic
 streamlit
 requests
 openai
+numpy

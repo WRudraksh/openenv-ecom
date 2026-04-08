@@ -37,6 +37,10 @@ class MyObservation(Observation):
     day: int = Field(default=0, description="Current simulation day")
     profit: float = Field(default=0.0, description="Profit from the last step")
     revenue: float = Field(default=0.0, description="Revenue from the last step")
+    seasonal_factor: float = Field(default=1.0, description="Current seasonal demand multiplier")
+    day_of_week: int = Field(default=0, description="Day within the week cycle (0-6)")
+    done: bool = Field(default=False, description="Whether episode is complete")
+    reward: float | None = Field(default=None, description="Reward for last step")
 
 
 class MyAction(Action):

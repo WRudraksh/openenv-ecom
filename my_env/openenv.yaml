@@ -1,7 +1,17 @@
 spec_version: 1
-name: my_env
+name: ecom-env
+description: >
+  Sequential e-commerce optimization environment. An agent jointly controls
+  pricing, inventory restocking, and marketing for 5 products over 30 simulated
+  days, under a fixed budget and stochastic demand with price elasticity and
+  weekly seasonality.
 type: space
 runtime: fastapi
 app: server.app:app
 port: 8000
+episode_length: 30
+action_space:
+  pricing: "per-product enum: increase | decrease | keep"
+  inventory: "per-product bool: restock or not"
+  marketing: "enum: run_ads | influencer | no_campaign"
 

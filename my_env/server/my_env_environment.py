@@ -13,6 +13,8 @@ and marketing decisions.
 """
 
 from uuid import uuid4
+import math
+import numpy as np
 
 from openenv.core.env_server.interfaces import Environment
 from openenv.core.env_server.types import State
@@ -96,6 +98,8 @@ class MyEnvironment(Environment):
         self._day = 0
         self._last_profit = 0.0
         self._last_revenue = 0.0
+        self._rng = np.random.default_rng(seed=42)
+        self._seasonal_factor = 1.0
 
     def _init_products(self):
         """Initialize product catalog with default values."""
@@ -107,6 +111,10 @@ class MyEnvironment(Environment):
                 "stock": data["stock"],
                 "demand": data["demand"],
                 "competitor_price": data["competitor_price"],
+                "base_demand": data["demand"],
+                "demand_modifier": 0,
+                "profit_last_step": 0.0,
+                "stockout": False,
             }
 
     def _build_observation(self, reward: float = 0.0, done: bool = False) -> MyObservation:
@@ -119,6 +127,8 @@ class MyEnvironment(Environment):
                 "stock": data["stock"],
                 "demand": data["demand"],
                 "competitor_price": data["competitor_price"],
+                "profit_last_step": data.get("profit_last_step", 0.0),
+                "stockout": data.get("stockout", False),
             }
 
         return MyObservation(
@@ -129,6 +139,8 @@ class MyEnvironment(Environment):
             day=self._day,
             profit=round(self._last_profit, 2),
             revenue=round(self._last_revenue, 2),
+            seasonal_factor=round(getattr(self, "_seasonal_factor", 1.0), 4),
+            day_of_week=self._day % 7,
             done=done,
             reward=round(reward, 4),
         )
@@ -148,6 +160,8 @@ class MyEnvironment(Environment):
         self._day = 0
         self._last_profit = 0.0
         self._last_revenue = 0.0
+        self._rng = np.random.default_rng(seed=42)
+        self._seasonal_factor = 1.0
 
         return self._build_observation(reward=0.0, done=False)
 
@@ -164,17 +178,30 @@ class MyEnvironment(Environment):
         self._state.step_count += 1
         self._day += 1
 
+        self._seasonal_factor = 1.0 + 0.2 * math.sin(2 * math.pi * self._day / 7)
+
+        # Pre-step: Reset demand and apply noise/seasonality
+        for prod in self._products.values():
+            prod["demand"] = max(0, prod["base_demand"] + prod["demand_modifier"])
+            prod["demand"] = max(0, int(prod["demand"] * self._seasonal_factor))
+            noise = self._rng.normal(0, max(2, prod["demand"] * 0.1))
+            prod["demand"] = max(0, int(prod["demand"] + noise))
+            prod["stockout"] = False
+
         # ── 1. Pricing Update ──────────────────────────────────────────
+        PRICE_ELASTICITY = 0.08
         for product_name, decision in action.pricing.items():
             if product_name not in self._products:
                 continue
             prod = self._products[product_name]
             if decision == "increase":
                 prod["price"] = round(prod["price"] + PRICE_CHANGE_AMOUNT, 2)
-                prod["demand"] = max(0, prod["demand"] - DEMAND_CHANGE_ON_PRICE)
+                delta = int(prod["base_demand"] * PRICE_ELASTICITY)
+                prod["demand_modifier"] = max(-50, prod["demand_modifier"] - delta)
             elif decision == "decrease":
-                prod["price"] = round(max(prod["cost"], prod["price"] - PRICE_CHANGE_AMOUNT), 2)
-                prod["demand"] = prod["demand"] + DEMAND_CHANGE_ON_PRICE
+                prod["price"] = round(max(prod["cost"] * 1.05, prod["price"] - PRICE_CHANGE_AMOUNT), 2)
+                delta = int(prod["base_demand"] * PRICE_ELASTICITY)
+                prod["demand_modifier"] = min(50, prod["demand_modifier"] + delta)
 
         # ── 2. Inventory (Restocking) ──────────────────────────────────
         restock_total_cost = 0.0
@@ -212,28 +239,42 @@ class MyEnvironment(Environment):
         overpriced_count = 0
 
         for product_name, prod in self._products.items():
+            # Track stockouts (demand exceeded stock)
+            if prod["demand"] > prod["stock"]:
+                total_stockouts += 1
+                prod["stockout"] = True
+
             sales = min(prod["stock"], prod["demand"])
             revenue = sales * prod["price"]
             cogs = sales * prod["cost"]
+
+            prod["profit_last_step"] = revenue - cogs
 
             total_revenue += revenue
             total_cost_of_goods += cogs
 
             prod["stock"] -= sales
 
-            # Track stockouts (demand exceeded stock)
-            if prod["demand"] > prod["stock"] + sales:
-                total_stockouts += 1
-
             # Track overpriced products
             if prod["price"] > prod["competitor_price"] * 1.15:
                 overpriced_count += 1
 
         total_profit = total_revenue - total_cost_of_goods
+
+        HOLDING_COST_PER_UNIT = 0.5
+        holding_cost = sum(p["stock"] for p in self._products.values()) * HOLDING_COST_PER_UNIT
+        self._budget -= holding_cost
+        total_profit -= holding_cost
+
         self._budget += total_profit
 
         self._last_revenue = total_revenue
         self._last_profit = total_profit
+
+        # ── 4.5 Competitor Price Drift ─────────────────────────────────
+        for prod in self._products.values():
+            drift = self._rng.uniform(-5, 5)
+            prod["competitor_price"] = round(max(prod["cost"] * 1.1, prod["competitor_price"] + drift), 2)
 
         # ── 5. Satisfaction Update ─────────────────────────────────────
         # Penalize stockouts
@@ -255,14 +296,19 @@ class MyEnvironment(Environment):
         self._customer_satisfaction = max(0.0, min(1.0, self._customer_satisfaction))
 
         # ── 6. Reward Calculation ──────────────────────────────────────
-        stockout_reward_penalty = total_stockouts * 10.0
-        overspending_penalty = max(0.0, restock_total_cost - total_revenue) * 0.1
+        max_possible_revenue = sum(
+            p["base_demand"] * p["price"] for p in self._products.values()
+        )
+        normalized_profit = total_profit / max(max_possible_revenue, 1)
+
+        stockout_rate = total_stockouts / len(self._products)
+        budget_health = max(0, self._budget / 10000.0)
 
         reward = (
-            total_profit * 0.6
-            + self._customer_satisfaction * 50.0
-            - stockout_reward_penalty
-            - overspending_penalty
+            normalized_profit * 100.0
+            + self._customer_satisfaction * 20.0
+            - stockout_rate * 30.0
+            + budget_health * 10.0
         )
 
         # End after 30 days

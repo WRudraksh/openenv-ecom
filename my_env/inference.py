@@ -55,7 +55,10 @@ Rules & tips:
 - Restocking costs money (product cost × 30 units).
 - "run_ads" costs $200 and boosts demand; "influencer" costs $350 and boosts satisfaction.
 - Stockouts hurt satisfaction. Overpriced products (>15% above competitor) hurt satisfaction.
-- Reward = profit×0.6 + satisfaction×50 − stockout_penalty − overspending_penalty
+- Reward = (profit / max_possible * 100) + (satisfaction * 20) - (stockout_rate * 30) + (budget_health * 10)
+- Holding unsold inventory costs $0.50/unit/day.
+- Demand has Gaussian noise — do not assume deterministic outcomes.
+- Note the new seasonal_factor in your observation to guide demand predictions.
 
 Respond with ONLY valid JSON, no markdown fences, no explanation.
 """
