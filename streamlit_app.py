@@ -12,7 +12,7 @@ import requests
 import streamlit as st
 import pandas as pd
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://localhost:7860"
 
 # ──────────────────── Page Config ────────────────────
 st.set_page_config(

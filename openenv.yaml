@@ -8,7 +8,7 @@ description: >
 type: space
 runtime: fastapi
 app: server.app:app
-port: 8000
+port: 7860
 episode_length: 30
 action_space:
   pricing: "per-product enum: increase | decrease | keep"
