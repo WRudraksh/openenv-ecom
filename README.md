@@ -1,14 +1,10 @@
 ---
-title: My Env Environment Server
-emoji: 🖲️
-colorFrom: yellow
-colorTo: blue
+title: Ecommerce Campaign
+emoji: 🛒
+colorFrom: blue
+colorTo: green
 sdk: docker
 pinned: false
-app_port: 8000
-base_path: /web
-tags:
-  - openenv
 ---
 
 # My Env Environment
