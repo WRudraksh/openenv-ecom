@@ -1,4 +1,5 @@
 #!/bin/bash
+cd /app/env
 # Start FastAPI backend on 7860 so the Hackathon Checker can reach it via Hugging Face
 uvicorn server.app:app --host 0.0.0.0 --port 7860 &
 
